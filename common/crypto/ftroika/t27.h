@@ -66,15 +66,34 @@ static inline t27_t t27_clean(t27_t a) {
 
 static inline t27_t t27_sum(const t27_t* a, const t27_t* b) {
   t27_t r;
+  uint32_t self_zero = _1(a) | _2(a);
+  r.p = (~(_2(a) ^ _2(b))) & (self_zero ^ _1(b));
+  r.n = (~(_1(a) ^ _1(b))) & (self_zero ^ _2(b));
+  
+  /*
   r.p = (_1(a) & _0(b)) | (_0(a) & _1(b)) | (_2(a) & _2(b));
   r.n = (_2(a) & _0(b)) | (_0(a) & _2(b)) | (_1(a) & _1(b));
+  */
   return r;
+}
+
+static inline t27_t t27_mul(const t27_t* a, const t27_t* b) {
+  t27_t r;
+  r.p = (_1(a) & _1(b)) | (_2(a) & _2(b));
+  r.n = (_1(a) & _2(b)) | (_2(a) & _1(b));
+  return r;
+}
+
+static inline t27_t t27_dec(const t27_t* a) {
+  t27_t t = {.p = 0, .n = 0x07ffffff};
+  return t27_sum(&t, a);
 }
 
 static inline t27_t t27_roll(t27_t a, const int n) {
   t27_t r;
-  r.p = ((a.p << n) | (a.p >> (27 - n))) & 0x07ffffff;
-  r.n = ((a.n << n) | (a.n >> (27 - n))) & 0x07ffffff;
+  int m = 27 - n;
+  r.p = ((a.p << n) | (a.p >> m)) & 0x07ffffff;
+  r.n = ((a.n << n) | (a.n >> m)) & 0x07ffffff;
   return r;
 }
 
@@ -103,26 +122,67 @@ static inline void t27_set(t27_t* a, const int pos, const uint8_t val) {
   }
 }
 
+static inline uint8_t t27_get_balance(const t27_t* a, const int pos) {
+  const uint32_t mask = 1 << pos;
+  if (a->p & mask) {
+    return 1;
+  } else if (a->n & mask) {
+    return -1;
+  }
+  return 0;
+}
+
+static inline void t27_set_balance(t27_t* a, const int pos, const int8_t val) {
+  if (val > 1) return;
+  const uint32_t mask = 1 << pos;
+  const uint32_t unmask = ~mask;
+  a->p = a->p & unmask;
+  a->n = a->n & unmask;
+  if (val == 1) {
+    a->p |= mask;
+  } else if (val == -1) {
+    a->n |= mask;
+  } else {
+    return;
+  }
+}
+
 static inline void state_to_fstate(trit_t* state, t27_t* fstate) {
+  for (size_t slice = 0; slice < T27_NUM_SLICES; ++slice) {
+    for (size_t idx = 0; idx < T27_SLICE_SIZE; ++idx) {
+        trit_t t = state[T27_SLICE_SIZE * slice + idx] - 1;
+        t27_set_balance(&fstate[idx], slice, t);
+    }
+  }
+  /*
   for (size_t slice = 0; slice < T27_NUM_SLICES; ++slice) {
     for (size_t row = 0; row < T27_NUM_ROWS; ++row) {
       for (size_t colum = 0; colum < T27_NUM_COLUMNS; ++colum) {
-        trit_t t = state[T27_SLICE_SIZE * slice + T27_NUM_COLUMNS * row + colum];
-        t27_set(&fstate[T27_NUM_COLUMNS * row + colum], slice, t);
+        trit_t t = state[T27_SLICE_SIZE * slice + T27_NUM_COLUMNS * row + colum] - 1;
+        t27_set_balance(&fstate[T27_NUM_COLUMNS * row + colum], slice, t);
       }
     }
   }
+  */
 }
 
 static inline void fstate_to_state(t27_t* fstate, trit_t* state) {
   for (size_t slice = 0; slice < T27_NUM_SLICES; ++slice) {
+    for (size_t idx = 0; idx < T27_SLICE_SIZE; ++idx) {
+      state[T27_SLICE_SIZE * slice + idx] =
+          t27_get_balance(&fstate[idx], slice);
+    }
+  }
+  /*
+  for (size_t slice = 0; slice < T27_NUM_SLICES; ++slice) {
     for (size_t row = 0; row < T27_NUM_ROWS; ++row) {
       for (size_t colum = 0; colum < T27_NUM_COLUMNS; ++colum) {
         state[T27_SLICE_SIZE * slice + T27_NUM_COLUMNS * row + colum] =
-            t27_get(&fstate[T27_NUM_COLUMNS * row + colum], slice);
+            t27_get_balance(&fstate[T27_NUM_COLUMNS * row + colum], slice);
       }
     }
   }
+  */
 }
 
 #endif  //__COMMON_FTROIKA_T27_H__

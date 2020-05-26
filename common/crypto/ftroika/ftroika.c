@@ -311,6 +311,21 @@ void fPrintTroikaState(t27_t *state) {
 }
 
 void ftroika_sub_tryte(t27_t *a, t27_t *b, t27_t *c) {
+  t27_t t, d, e, f, g;
+  d = t27_dec(a);
+
+  t = t27_mul(&d, b);
+  e = t27_sum(&t, c);
+
+  t = t27_mul(&e, b);
+  f = t27_sum(&t, &d);
+  
+  t = t27_mul(&e, &f);
+  g = t27_sum(&t, b);
+  *a = t27_clean(g);
+  *b = t27_clean(f);
+  *c = t27_clean(e);
+  /*
   t27_t x[3];
   x[0].p = A | E | F | J | M | P | S | U | Z;
   x[0].n = B | C | G | K | N | Q | T | V | X;
@@ -321,14 +336,36 @@ void ftroika_sub_tryte(t27_t *a, t27_t *b, t27_t *c) {
   *a = t27_clean(x[0]);
   *b = t27_clean(x[1]);
   *c = t27_clean(x[2]);
+  */
 }
 
 void ftroika_sub_trytes(t27_t *state) {
+  for (size_t idx = 0; idx < SLICES; idx += 3) {
+    ftroika_sub_tryte(&state[idx], &state[idx + 1], &state[idx+2]);
+  }
+    /*
   for (size_t col = 0; col < COLUMNS; ++col) {
+    size_t idx = ROWS * col;
     ftroika_sub_tryte(&state[ROWS * col + 2], &state[ROWS * col + 1], &state[ROWS * col]);
   }
+  */
 }
+
+void swap3(t27_t *state, size_t a, size_t b, size_t c) {
+  t27_t t = state[a];
+  state[a] = state[b];
+  state[b] = state[c];
+  state[c] = t;
+}
+
 void ftroika_shift_rows(t27_t *state) {
+    swap3(state, 12, 9, 15);
+    swap3(state, 13, 10, 16);
+    swap3(state, 14, 11, 17);
+    swap3(state, 24, 18, 21);
+    swap3(state, 25, 19, 22);
+    swap3(state, 26, 20, 23);
+    /*
   t27_t new_state[SLICESIZE];
   const int shifts[27] = {0,  1, 2,  3,  4,  5,  6,  7,  8,  12, 13, 14, 15, 16,
                           17, 9, 10, 11, 24, 25, 26, 18, 19, 20, 21, 22, 23};
@@ -336,33 +373,51 @@ void ftroika_shift_rows(t27_t *state) {
     new_state[shifts[i]] = state[i];
   }
   memcpy(state + 9, new_state + 9, (SLICESIZE - 9) * sizeof(t27_t));
+  */
 }
 
 void ftroika_shift_lanes(t27_t *state) {
   int rowcol;
-  t27_t new_state[SLICESIZE];
+  //t27_t new_state[SLICESIZE];
   for (rowcol = 0; rowcol < SLICESIZE; ++rowcol) {
     int shift = shift_lanes_param[rowcol];
     // T27 orig = state[rowcol];
-    new_state[rowcol] = t27_roll(state[rowcol], shift);
+    //new_state[rowcol] = t27_roll(state[rowcol], shift);
+    state[rowcol] = t27_roll(state[rowcol], shift);
     // T27 test = t27_roll(new_state[COLUMNS*row + col], 27 - shift);
   }
-  memcpy(state, new_state, SLICESIZE * sizeof(t27_t));
+  //memcpy(state, new_state, SLICESIZE * sizeof(t27_t));
 }
 
 void ftroika_add_column_parity(t27_t *state) {
   int row, col, idx;
+  int COLUMNS_2 = COLUMNS + COLUMNS;
   t27_t col_sum, sum_to_add;
-  t27_t parity[COLUMNS];
+  t27_t parity[COLUMNS+2];
   // First compute parity for each column
   for (col = 0; col < COLUMNS; ++col) {
     col_sum = t27_init(0, 0);
-    for (row = 0; row < ROWS; ++row) {
-      col_sum = t27_sum(&col_sum, &state[COLUMNS * row + col]);
-    }
-    parity[col] = col_sum;
+    idx = col;
+    col_sum = t27_sum(&col_sum, &state[idx]);
+    col_sum = t27_sum(&col_sum, &state[idx + COLUMNS]);
+    col_sum = t27_sum(&col_sum, &state[idx + COLUMNS_2]);
+    parity[col + 1] = col_sum;
   }
+  parity[0] = parity[COLUMNS];
+  parity[COLUMNS + 1] = parity[1];
+
+  for (col = 0; col < COLUMNS; ++col) {
+    t27_t t1 = parity[col];
+    t27_t t2 = t27_roll(parity[col + 2], SLICES - 1);
+    sum_to_add = t27_sum(&t1, &t2);
+    idx = col;
+    state[idx] = t27_sum(&state[idx], &sum_to_add);
+    state[idx + COLUMNS] = t27_sum(&state[idx +COLUMNS], &sum_to_add);
+    state[idx+COLUMNS_2] = t27_sum(&state[idx+COLUMNS_2], &sum_to_add);
+  }
+
   // Add parity
+  /*
   for (row = 0; row < ROWS; ++row) {
     for (col = 0; col < COLUMNS; ++col) {
       idx = COLUMNS * row + col;
@@ -372,6 +427,7 @@ void ftroika_add_column_parity(t27_t *state) {
       state[idx] = t27_sum(&state[idx], &sum_to_add);
     }
   }
+  */
 }
 
 void ftroika_add_round_constant(t27_t *state, int round) {
